@@ -54,14 +54,27 @@
     <PackageReference Include="mdoc" Version="5.8.3" PrivateAssets="All" GeneratePathProperty="true" />
   </ItemGroup>
 
-  <!-- workaround for https://github.com/microsoft/ProjectReunion/pull/707 -->
-  <Target Name="Net6WinUIWorkaround"
-          BeforeTargets="_GetSdkToolsPathsFromSdk"
-          Condition="$(TargetFramework.Contains('-windows')) == true ">
-    <PropertyGroup>
-      <TargetPlatformIdentifierAdjusted>UAP</TargetPlatformIdentifierAdjusted>
-    </PropertyGroup>
+  <!-- HACK: WinUI overwrite tasks that are not needed when multitargeting -->
+  <Target Name="ValidateWinUIPlatform" />
+  <Target Name="BinPlaceBootstrapDll" />
+
+  <!--
+    Workaround for https://github.com/dotnet/sdk/issues/18148 where an analyzer from a new version of a package
+    is not found in the older version of that same package. So we just remove usage of the analyzer entirely
+    because we don't use it in this repo.
+  -->
+  <Target Name="RemoveLoggingAnalyzer" BeforeTargets="CoreCompile">
+    <ItemGroup>
+      <Analyzer Remove="@(Analyzer)" Condition="%(FileName) == 'Microsoft.Extensions.Logging.Generators'" />
+    </ItemGroup>
   </Target>
+
+  <!--
+    Workaround for https://github.com/dotnet/sdk/issues/11105
+  -->
+  <ItemGroup>
+    <SourceRoot Include="$([MSBuild]::EnsureTrailingSlash($(NuGetPackageRoot)))" Condition="'$(NuGetPackageRoot)' != ''" />
+  </ItemGroup>
 
   <!--
     ===================================================================================================================
@@ -122,14 +135,14 @@ internal partial class VersionConstants {
     Sign the assembly using sn.
     ===================================================================================================================
   -->
-  <PropertyGroup Condition=" '$(SignAssembly)' == 'true' and '$(TargetPath)' != '' and Exists('$(TargetPath)') ">
+  <PropertyGroup Condition=" '$(SignAssembly)' == 'true' and '$(TargetPath)' != '' ">
     <_SignAssemblyAfterTargets>
       CoreCompile
     </_SignAssemblyAfterTargets>
   </PropertyGroup>
   <Target Name="_SignAssembly"
           AfterTargets="$(_SignAssemblyAfterTargets)"
-          Condition=" '$(SignAssembly)' == 'true' and '$(TargetPath)' != '' and Exists('$(TargetPath)') ">
+          Condition=" '$(SignAssembly)' == 'true' and '$(TargetPath)' != '' ">
     <Exec Command="&quot;$(_SnExePath)&quot; -q -R @(IntermediateAssembly -> '&quot;%(Identity)&quot;') &quot;$(AssemblyOriginatorKeyFile)&quot;" />
   </Target>
 
@@ -140,14 +153,14 @@ internal partial class VersionConstants {
     Verify that the output assembly is signed correctly for release.
     ===================================================================================================================
   -->
-  <PropertyGroup Condition=" '$(SignAssembly)' == 'true' and '$(Configuration)' == 'Release' and '$(TargetPath)' != '' and Exists('$(TargetPath)') ">
+  <PropertyGroup Condition=" '$(SignAssembly)' == 'true' and '$(Configuration)' == 'Release' and '$(TargetPath)' != '' ">
     <_SignAssemblyVerifyAfterTargets>
       Build
     </_SignAssemblyVerifyAfterTargets>
   </PropertyGroup>
   <Target Name="_SignAssemblyVerify"
           AfterTargets="$(_SignAssemblyVerifyAfterTargets)"
-          Condition=" '$(SignAssembly)' == 'true' and '$(Configuration)' == 'Release' and '$(TargetPath)' != '' and Exists('$(TargetPath)') ">
+          Condition=" '$(SignAssembly)' == 'true' and '$(Configuration)' == 'Release' and '$(TargetPath)' != '' ">
     <Exec Command="&quot;$(_SnExePath)&quot; -vf &quot;$(TargetPath)&quot;" />
   </Target>
 
@@ -186,7 +199,7 @@ internal partial class VersionConstants {
       <_CopyItems Include="$(TargetDir)$(TargetName).pdb" Dest="nuget\$(PackagingLocation)\$(TargetName).pdb" />
     </ItemGroup>
     <ItemGroup>
-      <_CopyItems Include="@(_NoneWithTargetPath)" Dest="%(_NoneWithTargetPath.TargetPath)" />
+      <_CopyItems Include="@(_NoneWithTargetPath)" Condition=" '%(_NoneWithTargetPath.Extension)' != '.cs' " Dest="%(_NoneWithTargetPath.TargetPath)" />
     </ItemGroup>
   </Target>
   <Target Name="_CopyToOutputDirectory" Condition=" '$(SkipCopyToOutputDirectory)' != 'true' and '$(TargetPath)' != '' "

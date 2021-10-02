@@ -37,8 +37,8 @@ Task("libSkiaSharp")
             $"skia_use_system_zlib=false " +
             $"extra_cflags=[  " +
             $"  '-DSKIA_C_DLL', '/MD{d}', '/EHsc', '/Z7', " +
-            $"  '-DWINAPI_FAMILY=WINAPI_FAMILY_APP', '-DSK_BUILD_FOR_WINRT', '-DSK_HAS_DWRITE_1_H', '-DSK_HAS_DWRITE_2_H', '-DNO_GETENV', '-D_HAS_AUTO_PTR_ETC=1' ] " +
-            $"extra_ldflags=[ '/DEBUG:FULL', '/APPCONTAINER', 'WindowsApp.lib' ]");
+            $"  '-DSK_HAS_DWRITE_1_H', '-DSK_HAS_DWRITE_2_H', '-DNO_GETENV', '-D_HAS_AUTO_PTR_ETC=1' ] " +
+            $"extra_ldflags=[ '/DEBUG:FULL' ]");
 
         var outDir = OUTPUT_PATH.Combine(dir);
         EnsureDirectoryExists(outDir);
@@ -115,6 +115,7 @@ Task("ANGLE")
         if (Skip(arch)) return;
 
         var d = CONFIGURATION.ToLower() == "release" ? "" : "debug/";
+        var zd = CONFIGURATION.ToLower() == "release" ? "" : "d";
 
         RunProcess (vcpkg, $"install angle:{arch}-uwp");
 
@@ -124,6 +125,8 @@ Task("ANGLE")
         CopyFileToDirectory(VCPKG_PATH.CombineWithFilePath ($"installed/{arch}-uwp/{d}bin/libEGL.pdb"), outDir);
         CopyFileToDirectory(VCPKG_PATH.CombineWithFilePath ($"installed/{arch}-uwp/{d}bin/libGLESv2.dll"), outDir);
         CopyFileToDirectory(VCPKG_PATH.CombineWithFilePath ($"installed/{arch}-uwp/{d}bin/libGLESv2.pdb"), outDir);
+        CopyFileToDirectory(VCPKG_PATH.CombineWithFilePath ($"installed/{arch}-uwp/{d}bin/zlib{zd}1.dll"), outDir);
+        CopyFileToDirectory(VCPKG_PATH.CombineWithFilePath ($"installed/{arch}-uwp/{d}bin/zlib{zd}.pdb"), outDir);
     }
 });
 

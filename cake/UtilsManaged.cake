@@ -1,10 +1,9 @@
-void PackageNuGet(FilePath nuspecPath, DirectoryPath outputPath, bool allowDefaultExcludes = false)
+void PackageNuGet(FilePath nuspecPath, DirectoryPath outputPath, bool allowDefaultExcludes = false, string symbolsFormat = null)
 {
     EnsureDirectoryExists(outputPath);
     var settings = new NuGetPackSettings {
         OutputDirectory = MakeAbsolute(outputPath),
         BasePath = nuspecPath.GetDirectory(),
-        ToolPath = NUGET_EXE,
         Properties = new Dictionary<string, string> {
             // NU5048: The 'PackageIconUrl'/'iconUrl' element is deprecated. Consider using the 'PackageIcon'/'icon' element instead.
             // NU5105: The package version 'xxx' uses SemVer 2.0.0 or components of SemVer 1.0.0 that are not supported on legacy clients.
@@ -14,6 +13,10 @@ void PackageNuGet(FilePath nuspecPath, DirectoryPath outputPath, bool allowDefau
     };
     if (allowDefaultExcludes) {
         settings.ArgumentCustomization = args => args.Append("-NoDefaultExcludes");
+    }
+    if (!string.IsNullOrEmpty(symbolsFormat)) {
+        settings.Symbols = true;
+        settings.SymbolPackageFormat = symbolsFormat;
     }
     NuGetPack(nuspecPath, settings);
 }
@@ -50,7 +53,7 @@ void RunNetCoreTests(FilePath testAssembly)
         Configuration = CONFIGURATION,
         NoBuild = true,
         TestAdapterPath = ".",
-        Logger = "xunit",
+        Loggers = new [] { "xunit" },
         WorkingDirectory = dir,
         Verbosity = DotNetCoreVerbosity.Normal,
         ArgumentCustomization = args => {
@@ -137,7 +140,7 @@ IEnumerable<(DirectoryPath path, string platform)> GetPlatformDirectories(Direct
     // try find any cross-platform frameworks
     foreach (var dir in platformDirs) {
         var d = dir.GetDirectoryName().ToLower();
-        if (d.StartsWith("netstandard") || d.StartsWith("portable")) {
+        if (d.StartsWith("netstandard") || d.StartsWith("portable") || d.Equals("net6.0")) {
             // we just want this single platform
             yield return (dir, null);
             yield break;
@@ -168,7 +171,7 @@ IEnumerable<(DirectoryPath path, string platform)> GetPlatformDirectories(Direct
         else if (d.StartsWith("net") && d.Contains("-maccatalyst"))
             yield return (dir, "maccatalyst");
         else if (d.StartsWith("netcoreapp"))
-            ; // skip this one for now
+            continue; // skip this one for now
         else
             throw new Exception($"Unknown platform '{d}' found at '{dir}'.");
     }
@@ -195,6 +198,7 @@ string[] GetReferenceSearchPaths()
         refs.Add($"{pf}/Windows Kits/10/References/Windows.Foundation.UniversalApiContract/1.0.0.0");
         refs.Add($"{pf}/Windows Kits/10/References/Windows.Foundation.FoundationContract/1.0.0.0");
         refs.Add($"{pf}/GtkSharp/2.12/lib");
+        refs.Add($"{pf}/GtkSharp/2.12/lib/gtk-sharp-2.0");
         refs.Add($"{vs}/Common7/IDE/PublicAssemblies");
     } else {
         // TODO
@@ -203,9 +207,34 @@ string[] GetReferenceSearchPaths()
     return refs.ToArray();
 }
 
+string[] GetDotNetPacksSearchPaths()
+{
+    var refs = new List<string>();
+
+    RunProcess("dotnet", "--list-sdks", out var sdks);
+
+    var last = sdks.Last();
+    var start = last.IndexOf("[") + 1;
+    var latestSdk = (DirectoryPath)(last.Substring(start, last.Length - start - 1));
+    var dotnetRoot = latestSdk.Combine("..");
+
+    foreach(var pack in GetDirectories(dotnetRoot.Combine("packs").FullPath + "/*.Ref.*")) {
+        var latestPath = GetDirectories(pack.FullPath + "/*").Last();
+        refs.AddRange(GetDirectories(latestPath.FullPath + "/ref/net*").Select(d => d.FullPath));
+    }
+
+    foreach(var pack in GetDirectories(dotnetRoot.Combine("packs").FullPath + "/*.Ref")) {
+        var latestPath = GetDirectories(pack.FullPath + "/*").Last();
+        refs.AddRange(GetDirectories(latestPath.FullPath + "/ref/net*").Select(d => d.FullPath));
+    }
+
+    return refs.ToArray();
+}
+
 async Task<NuGetDiff> CreateNuGetDiffAsync()
 {
     var comparer = new NuGetDiff();
+    comparer.SearchPaths.AddRange(GetDotNetPacksSearchPaths());
     comparer.SearchPaths.AddRange(GetReferenceSearchPaths());
     comparer.PackageCache = PACKAGE_CACHE_PATH.FullPath;
 
@@ -217,7 +246,7 @@ async Task<NuGetDiff> CreateNuGetDiffAsync()
     await AddDep("Xamarin.Forms", "Xamarin.Mac");
     await AddDep("Xamarin.Forms", "tizen40");
     await AddDep("Xamarin.Forms", "uap10.0.16299");
-    await AddDep("Xamarin.Forms.Platform.WPF", "net45");
+    await AddDep("Xamarin.Forms.Platform.WPF", "net461");
     await AddDep("Xamarin.Forms.Platform.GTK", "net45");
     await AddDep("GtkSharp", "netstandard2.0");
     await AddDep("GdkSharp", "netstandard2.0");
@@ -229,8 +258,10 @@ async Task<NuGetDiff> CreateNuGetDiffAsync()
     await AddDep("Uno.UI", "xamarinios10");
     await AddDep("Uno.UI", "xamarinmac20");
     await AddDep("Uno.UI", "UAP");
-    await AddDep("Microsoft.ProjectReunion.Foundation", "net5.0-windows");
-    await AddDep("Microsoft.ProjectReunion.WinUI", "net5.0-windows10.0.18362.0");
+    await AddDep("Microsoft.WindowsAppSDK.Foundation", "net5.0-windows");
+    await AddDep("Microsoft.WindowsAppSDK.WinUI", "net5.0-windows10.0.18362.0");
+    await AddDep("Microsoft.WindowsAppSDK.InteractiveExperiences", "net5.0-windows10.0.17763.0");
+    await AddDep("Microsoft.Maui.Graphics", "netstandard2.0");
     await AddDep("Microsoft.Windows.SDK.NET.Ref", "");
 
     await AddDep("OpenTK.GLControl", "NET40", "reference");
@@ -279,6 +310,11 @@ async Task DownloadPackageAsync(string id, DirectoryPath outputDirectory)
         currentId = currentId.ToLower();
 
         Information($"Downloading '{currentId}' version '{currentVersion}'...");
+
+        if (currentId == "_nativeassets.maccatalyst") {
+            Warning($"Skipping '{currentId}' because we do not yet have this package working...");
+            return;
+        }
 
         var root = await comparer.ExtractCachedPackageAsync(currentId, currentVersion);
         var toolsDir = $"{root}/tools/";
