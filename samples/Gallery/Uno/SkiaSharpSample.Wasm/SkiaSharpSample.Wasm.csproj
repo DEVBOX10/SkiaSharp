@@ -18,7 +18,8 @@
     <WasmShellMonoRuntimeExecutionMode>Interpreter</WasmShellMonoRuntimeExecutionMode>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)'=='Release'">
-    <WasmShellMonoRuntimeExecutionMode>FullAOT</WasmShellMonoRuntimeExecutionMode>
+    <!-- Use FullAOT for local builds only for faster CI builds -->
+    <WasmShellMonoRuntimeExecutionMode Condition="'$(BUILD_BUILDID)' == ''">FullAOT</WasmShellMonoRuntimeExecutionMode>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="1.1.1" />
@@ -34,6 +35,8 @@
   <ItemGroup>
     <ProjectReference Include="..\..\..\..\binding\SkiaSharp\SkiaSharp.csproj" />
     <ProjectReference Include="..\..\..\..\binding\HarfBuzzSharp\HarfBuzzSharp.csproj" />
+    <ProjectReference Include="..\..\..\..\binding\SkiaSharp.SceneGraph\SkiaSharp.SceneGraph.csproj" />
+    <ProjectReference Include="..\..\..\..\binding\SkiaSharp.Skottie\SkiaSharp.Skottie.csproj" />
     <ProjectReference Include="..\..\..\..\source\SkiaSharp.Views.Uno\SkiaSharp.Views.Uno.Wasm\SkiaSharp.Views.Uno.Wasm.csproj" />
     <ProjectReference Include="..\..\..\..\source\SkiaSharp.HarfBuzz\SkiaSharp.HarfBuzz\SkiaSharp.HarfBuzz.csproj" />
   </ItemGroup>
